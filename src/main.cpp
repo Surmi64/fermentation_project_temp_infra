@@ -9,6 +9,8 @@
 static const uint8_t ONE_WIRE_PIN = 4;
 static const uint8_t MAX_PROBES = 4;
 static const unsigned long READ_INTERVAL_MS = 2000;
+static const unsigned long MQTT_RETRY_MS = 5000;
+static const uint8_t SENSOR_RESOLUTION_BITS = 12;
 
 OneWire oneWire(ONE_WIRE_PIN);
 DallasTemperature sensors(&oneWire);
@@ -18,6 +20,9 @@ PubSubClient mqtt(net);
 
 DeviceAddress probeAddress[MAX_PROBES];
 uint8_t probeCount = 0;
+
+unsigned long lastReadMs = 0;
+unsigned long lastMqttAttemptMs = 0;
 
 static void sortProbes(uint8_t count) {
   for (uint8_t i = 1; i < count; i++) {
@@ -50,12 +55,18 @@ static bool ensureMqtt() {
     return true;
   }
 
+  const unsigned long now = millis();
+  if (lastMqttAttemptMs != 0 && now - lastMqttAttemptMs < MQTT_RETRY_MS) {
+    return false;
+  }
+  lastMqttAttemptMs = now;
+
   if (mqtt.connect(MQTT_CLIENT_ID)) {
     Serial.println("mqtt: connected");
     return true;
   }
 
-  Serial.printf("mqtt: connect failed, state %d\n", mqtt.state());
+  Serial.printf("mqtt: connect failed, state %d, retrying\n", mqtt.state());
   return false;
 }
 
@@ -73,13 +84,17 @@ void setup() {
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
 
   sensors.begin();
-  probeCount = sensors.getDeviceCount();
-  if (probeCount > MAX_PROBES) {
-    probeCount = MAX_PROBES;
+  sensors.setResolution(SENSOR_RESOLUTION_BITS);
+  uint8_t found = sensors.getDeviceCount();
+  if (found > MAX_PROBES) {
+    found = MAX_PROBES;
   }
 
-  for (uint8_t i = 0; i < probeCount; i++) {
-    sensors.getAddress(probeAddress[i], i);
+  probeCount = 0;
+  for (uint8_t i = 0; i < found; i++) {
+    if (sensors.getAddress(probeAddress[probeCount], i)) {
+      probeCount++;
+    }
   }
   sortProbes(probeCount);
 
@@ -93,25 +108,34 @@ void setup() {
 }
 
 void loop() {
-  if (!ensureMqtt()) {
-    delay(READ_INTERVAL_MS);
+  const bool online = ensureMqtt();
+  if (online) {
+    mqtt.loop();
+  }
+
+  const unsigned long now = millis();
+  if (now - lastReadMs < READ_INTERVAL_MS) {
     return;
   }
-  mqtt.loop();
+  lastReadMs = now;
 
   sensors.requestTemperatures();
 
   for (uint8_t i = 0; i < probeCount; i++) {
     const float celsius = sensors.getTempC(probeAddress[i]);
+    if (celsius <= DEVICE_DISCONNECTED_C) {
+      Serial.printf("probe %u: disconnected\n", i);
+      continue;
+    }
 
     char topic[48];
     char payload[16];
     snprintf(topic, sizeof(topic), "coffee/sensor/%u/temperature", i);
     snprintf(payload, sizeof(payload), "%.2f", celsius);
 
-    mqtt.publish(topic, payload);
+    if (online) {
+      mqtt.publish(topic, payload);
+    }
     Serial.printf("probe %u: %s C\n", i, payload);
   }
-
-  delay(READ_INTERVAL_MS);
 }
