@@ -10,6 +10,7 @@ static const uint8_t ONE_WIRE_PIN = 4;
 static const uint8_t MAX_PROBES = 4;
 static const unsigned long READ_INTERVAL_MS = 2000;
 static const unsigned long MQTT_RETRY_MS = 5000;
+static const unsigned long WIFI_RETRY_MS = 15000;
 static const uint8_t SENSOR_RESOLUTION_BITS = 12;
 
 OneWire oneWire(ONE_WIRE_PIN);
@@ -23,6 +24,8 @@ uint8_t probeCount = 0;
 
 unsigned long lastReadMs = 0;
 unsigned long lastMqttAttemptMs = 0;
+unsigned long lastWifiAttemptMs = 0;
+bool wifiWasUp = false;
 
 static void sortProbes(uint8_t count) {
   for (uint8_t i = 1; i < count; i++) {
@@ -38,16 +41,35 @@ static void sortProbes(uint8_t count) {
   }
 }
 
-static void connectWifi() {
+static void beginWifi() {
+  lastWifiAttemptMs = millis();
   WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  Serial.printf("wifi: connecting to %s\n", WIFI_SSID);
+}
 
-  Serial.printf("wifi: connecting to %s", WIFI_SSID);
-  while (WiFi.status() != WL_CONNECTED) {
-    Serial.print(".");
-    delay(500);
+static bool wifiReady() {
+  if (WiFi.status() == WL_CONNECTED) {
+    if (!wifiWasUp) {
+      wifiWasUp = true;
+      Serial.printf("wifi: up, ip %s\n", WiFi.localIP().toString().c_str());
+    }
+    return true;
   }
-  Serial.printf(" ok, ip %s\n", WiFi.localIP().toString().c_str());
+
+  if (wifiWasUp) {
+    wifiWasUp = false;
+    Serial.println("wifi: link lost");
+  }
+
+  const unsigned long now = millis();
+  if (now - lastWifiAttemptMs >= WIFI_RETRY_MS) {
+    Serial.println("wifi: retrying");
+    WiFi.disconnect();
+    beginWifi();
+  }
+  return false;
 }
 
 static bool ensureMqtt() {
@@ -80,7 +102,7 @@ void setup() {
   Serial.begin(115200);
   delay(100);
 
-  connectWifi();
+  beginWifi();
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
 
   sensors.begin();
@@ -108,7 +130,7 @@ void setup() {
 }
 
 void loop() {
-  const bool online = ensureMqtt();
+  const bool online = wifiReady() && ensureMqtt();
   if (online) {
     mqtt.loop();
   }
