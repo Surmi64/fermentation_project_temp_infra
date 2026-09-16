@@ -58,3 +58,35 @@ Open Serial Monitor at `115200` baud. Hold one probe in your hand to see which s
 ### 3. Spin Up Services
 ```bash
 docker compose up -d
+```
+
+This starts two containers:
+
+- **`coffee-mqtt`** - Mosquitto broker on port `1883`
+- **`coffee-grafana`** - Grafana on port `3000`
+
+Broker settings live in `mosquitto/config/mosquitto.conf`. The listener is
+anonymous, which is fine on a trusted LAN and not fine on anything exposed to
+the internet.
+
+### 4. Verify the Data
+With the ESP32 powered on, subscribe to every sensor topic at once:
+
+```bash
+mosquitto_sub -h localhost -t 'coffee/sensor/#' -v
+```
+
+Readings should appear every 2 seconds, one line per probe.
+
+---
+
+## Repository Layout
+
+```
+.
+├── docker-compose.yml
+└── mosquitto/
+    └── config/
+        └── mosquitto.conf
+```
+
