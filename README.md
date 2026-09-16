@@ -42,6 +42,19 @@ Metrics are published to the local MQTT broker:
 - `coffee/sensor/2/temperature`
 - `coffee/sensor/3/temperature`
 
+Alongside the readings:
+
+- `coffee/status` - retained `online` / `offline`, backed by an MQTT last
+  will, so a stalled graph can be told apart from a board that dropped off
+- `coffee/session/elapsed` - seconds since t=0, published each cycle
+
+Publishing anything to `coffee/session/start` resets t=0. Marking the pour
+this way lets several cups be lined up on the same axis afterwards:
+
+```bash
+mosquitto_pub -h localhost -t coffee/session/start -n
+```
+
 ---
 
 ## Quickstart

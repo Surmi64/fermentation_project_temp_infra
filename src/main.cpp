@@ -16,6 +16,8 @@ static const uint8_t SENSOR_RESOLUTION_BITS = 12;
 static const char STATUS_TOPIC[] = "coffee/status";
 static const char STATUS_ONLINE[] = "online";
 static const char STATUS_OFFLINE[] = "offline";
+static const char SESSION_START_TOPIC[] = "coffee/session/start";
+static const char SESSION_ELAPSED_TOPIC[] = "coffee/session/elapsed";
 
 OneWire oneWire(ONE_WIRE_PIN);
 DallasTemperature sensors(&oneWire);
@@ -30,6 +32,7 @@ unsigned long lastReadMs = 0;
 unsigned long lastMqttAttemptMs = 0;
 unsigned long lastWifiAttemptMs = 0;
 bool wifiWasUp = false;
+unsigned long sessionStartMs = 0;
 
 static void sortProbes(uint8_t count) {
   for (uint8_t i = 1; i < count; i++) {
@@ -76,6 +79,16 @@ static bool wifiReady() {
   return false;
 }
 
+static void onMessage(char *topic, uint8_t *payload, unsigned int length) {
+  (void)payload;
+  (void)length;
+
+  if (strcmp(topic, SESSION_START_TOPIC) == 0) {
+    sessionStartMs = millis();
+    Serial.println("session: t=0 marked");
+  }
+}
+
 static bool ensureMqtt() {
   if (mqtt.connected()) {
     return true;
@@ -89,6 +102,7 @@ static bool ensureMqtt() {
 
   if (mqtt.connect(MQTT_CLIENT_ID, STATUS_TOPIC, 0, true, STATUS_OFFLINE)) {
     mqtt.publish(STATUS_TOPIC, STATUS_ONLINE, true);
+    mqtt.subscribe(SESSION_START_TOPIC);
     Serial.println("mqtt: connected");
     return true;
   }
@@ -109,6 +123,7 @@ void setup() {
 
   beginWifi();
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
+  mqtt.setCallback(onMessage);
 
   sensors.begin();
   sensors.setResolution(SENSOR_RESOLUTION_BITS);
@@ -124,6 +139,7 @@ void setup() {
     }
   }
   sortProbes(probeCount);
+  sessionStartMs = millis();
 
   Serial.println();
   Serial.printf("found %u probe(s) on GPIO %u\n", probeCount, ONE_WIRE_PIN);
@@ -147,6 +163,13 @@ void loop() {
   lastReadMs = now;
 
   sensors.requestTemperatures();
+
+  const unsigned long elapsedSeconds = (now - sessionStartMs) / 1000;
+  if (online) {
+    char elapsed[16];
+    snprintf(elapsed, sizeof(elapsed), "%lu", elapsedSeconds);
+    mqtt.publish(SESSION_ELAPSED_TOPIC, elapsed);
+  }
 
   for (uint8_t i = 0; i < probeCount; i++) {
     const float celsius = sensors.getTempC(probeAddress[i]);
