@@ -48,9 +48,26 @@ Metrics are published to the local MQTT broker:
 
 ### 1. Flash the ESP32
 1. Open the project in **Arduino IDE** (or PlatformIO).
-2. Install required libraries: `OneWire`, `DallasTemperature`, `PubSubClient`.
-3. Update Wi-Fi and MQTT IP configuration in `src/main.cpp`.
-4. Upload code to ESP32 (`/dev/ttyUSB0` on Ubuntu).
+2. Install the ESP32 core: Boards Manager -> *esp32* by Espressif Systems.
+3. Install required libraries: `OneWire`, `DallasTemperature`, `PubSubClient`.
+4. Copy `src/config.example.h` to `src/config.h` and fill in the Wi-Fi and
+   broker values. `config.h` is git-ignored and stays on your machine.
+5. Select the board and settings below, then upload (`/dev/ttyUSB0` on Ubuntu).
+
+Board: **ESP32 Dev Module** (`esp32:esp32:esp32`). The named presets such as
+*DOIT ESP32 DEVKIT V1* target 30-pin clones and map pins differently.
+
+| Setting | Value |
+| --- | --- |
+| Flash Size | 4MB (32Mb) |
+| PSRAM | Disabled |
+| Flash Mode | QIO |
+| Partition Scheme | Default 4MB with spiffs |
+| CPU Frequency | 240MHz |
+| Upload Speed | 921600 |
+
+PSRAM must stay disabled - the WROOM-32 module has none, and enabling it boot
+loops. Drop the upload speed to `115200` if flashing fails partway.
 
 ### 2. Sensor Identification
 Open Serial Monitor at `115200` baud. Hold one probe in your hand to see which sensor index (`0-3`) spikes in temperature, then label that physical probe.
