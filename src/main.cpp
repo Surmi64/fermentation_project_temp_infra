@@ -13,6 +13,10 @@ static const unsigned long MQTT_RETRY_MS = 5000;
 static const unsigned long WIFI_RETRY_MS = 15000;
 static const uint8_t SENSOR_RESOLUTION_BITS = 12;
 
+static const char STATUS_TOPIC[] = "coffee/status";
+static const char STATUS_ONLINE[] = "online";
+static const char STATUS_OFFLINE[] = "offline";
+
 OneWire oneWire(ONE_WIRE_PIN);
 DallasTemperature sensors(&oneWire);
 
@@ -83,7 +87,8 @@ static bool ensureMqtt() {
   }
   lastMqttAttemptMs = now;
 
-  if (mqtt.connect(MQTT_CLIENT_ID)) {
+  if (mqtt.connect(MQTT_CLIENT_ID, STATUS_TOPIC, 0, true, STATUS_OFFLINE)) {
+    mqtt.publish(STATUS_TOPIC, STATUS_ONLINE, true);
     Serial.println("mqtt: connected");
     return true;
   }
