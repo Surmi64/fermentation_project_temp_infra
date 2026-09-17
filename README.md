@@ -60,11 +60,12 @@ mosquitto_pub -h localhost -t coffee/session/start -n
 ## Quickstart
 
 ### 1. Flash the ESP32
-1. Open the project in **Arduino IDE** (or PlatformIO).
+1. Open `coffee_thermometer/coffee_thermometer.ino` in **Arduino IDE**.
 2. Install the ESP32 core: Boards Manager -> *esp32* by Espressif Systems.
 3. Install required libraries: `OneWire`, `DallasTemperature`, `PubSubClient`.
-4. Copy `src/config.example.h` to `src/config.h` and fill in the Wi-Fi and
-   broker values. `config.h` is git-ignored and stays on your machine.
+4. Copy `coffee_thermometer/config.example.h` to
+   `coffee_thermometer/config.h` and fill in the Wi-Fi and broker values.
+   `config.h` is git-ignored and stays on your machine.
 5. Select the board and settings below, then upload (`/dev/ttyUSB0` on Ubuntu).
 
 Board: **ESP32 Dev Module** (`esp32:esp32:esp32`). The named presets such as
@@ -114,6 +115,9 @@ Readings should appear every 2 seconds, one line per probe.
 
 ```
 .
+├── coffee_thermometer/
+│   ├── coffee_thermometer.ino
+│   └── config.example.h
 ├── docker-compose.yml
 └── mosquitto/
     └── config/
