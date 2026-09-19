@@ -32,6 +32,7 @@ unsigned long lastReadMs = 0;
 unsigned long lastMqttAttemptMs = 0;
 unsigned long lastWifiAttemptMs = 0;
 bool wifiWasUp = false;
+bool mqttWasUp = false;
 unsigned long sessionStartMs = 0;
 
 static void sortProbes(uint8_t count) {
@@ -51,6 +52,7 @@ static void sortProbes(uint8_t count) {
 static void beginWifi() {
   lastWifiAttemptMs = millis();
   WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
   WiFi.setAutoReconnect(true);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.printf("wifi: connecting to %s\n", WIFI_SSID);
@@ -60,7 +62,8 @@ static bool wifiReady() {
   if (WiFi.status() == WL_CONNECTED) {
     if (!wifiWasUp) {
       wifiWasUp = true;
-      Serial.printf("wifi: up, ip %s\n", WiFi.localIP().toString().c_str());
+      Serial.printf("wifi: up, ip %s, rssi %d dBm\n",
+                    WiFi.localIP().toString().c_str(), WiFi.RSSI());
     }
     return true;
   }
@@ -94,6 +97,12 @@ static bool ensureMqtt() {
     return true;
   }
 
+  if (mqttWasUp) {
+    mqttWasUp = false;
+    Serial.printf("mqtt: link lost, state %d, rssi %d dBm\n",
+                  mqtt.state(), WiFi.RSSI());
+  }
+
   const unsigned long now = millis();
   if (lastMqttAttemptMs != 0 && now - lastMqttAttemptMs < MQTT_RETRY_MS) {
     return false;
@@ -103,6 +112,7 @@ static bool ensureMqtt() {
   if (mqtt.connect(MQTT_CLIENT_ID, STATUS_TOPIC, 0, true, STATUS_OFFLINE)) {
     mqtt.publish(STATUS_TOPIC, STATUS_ONLINE, true);
     mqtt.subscribe(SESSION_START_TOPIC);
+    mqttWasUp = true;
     Serial.println("mqtt: connected");
     return true;
   }
@@ -123,6 +133,7 @@ void setup() {
 
   beginWifi();
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
+  mqtt.setKeepAlive(60);
   mqtt.setCallback(onMessage);
 
   sensors.begin();
