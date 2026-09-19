@@ -13,6 +13,11 @@ static const unsigned long MQTT_RETRY_MS = 5000;
 static const unsigned long WIFI_RETRY_MS = 15000;
 static const uint8_t SENSOR_RESOLUTION_BITS = 12;
 
+static const bool TEST_MODE_ENABLED = TEST_MODE;
+static const float TEST_BASE_C = 60.0f;
+static const float TEST_NOISE_C = 1.0f;
+static const float TEST_PROBE_OFFSET_C = 0.3f;
+
 static const char STATUS_TOPIC[] = "coffee/status";
 static const char STATUS_ONLINE[] = "online";
 static const char STATUS_OFFLINE[] = "offline";
@@ -121,6 +126,15 @@ static bool ensureMqtt() {
   return false;
 }
 
+static float readProbe(uint8_t index) {
+  if (TEST_MODE_ENABLED) {
+    const float noise = (float)random(-100, 101) / 100.0f * TEST_NOISE_C;
+    return TEST_BASE_C + (float)index * TEST_PROBE_OFFSET_C + noise;
+  }
+
+  return sensors.getTempC(probeAddress[index]);
+}
+
 static void printAddress(const DeviceAddress addr) {
   for (uint8_t i = 0; i < 8; i++) {
     Serial.printf("%02X", addr[i]);
@@ -136,6 +150,17 @@ void setup() {
   mqtt.setKeepAlive(60);
   mqtt.setCallback(onMessage);
 
+  sessionStartMs = millis();
+  Serial.println();
+
+  if (TEST_MODE_ENABLED) {
+    randomSeed(micros());
+    probeCount = MAX_PROBES;
+    Serial.printf("test mode: %u synthetic probe(s) around %.1f C\n",
+                  probeCount, TEST_BASE_C);
+    return;
+  }
+
   sensors.begin();
   sensors.setResolution(SENSOR_RESOLUTION_BITS);
   uint8_t found = sensors.getDeviceCount();
@@ -150,9 +175,7 @@ void setup() {
     }
   }
   sortProbes(probeCount);
-  sessionStartMs = millis();
 
-  Serial.println();
   Serial.printf("found %u probe(s) on GPIO %u\n", probeCount, ONE_WIRE_PIN);
   for (uint8_t i = 0; i < probeCount; i++) {
     Serial.printf("  probe %u -> ", i);
@@ -173,7 +196,9 @@ void loop() {
   }
   lastReadMs = now;
 
-  sensors.requestTemperatures();
+  if (!TEST_MODE_ENABLED) {
+    sensors.requestTemperatures();
+  }
 
   const unsigned long elapsedSeconds = (now - sessionStartMs) / 1000;
   if (online) {
@@ -183,7 +208,7 @@ void loop() {
   }
 
   for (uint8_t i = 0; i < probeCount; i++) {
-    const float celsius = sensors.getTempC(probeAddress[i]);
+    const float celsius = readProbe(i);
     if (celsius <= DEVICE_DISCONNECTED_C) {
       Serial.printf("probe %u: disconnected\n", i);
       continue;
