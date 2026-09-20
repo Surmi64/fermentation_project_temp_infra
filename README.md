@@ -4,6 +4,10 @@ Real-time temperature monitoring setup for comparing 4 coffee cups simultaneousl
 
 Temperature drives what you actually taste: as a cup cools, perceived acidity and sweetness climb while bitterness recedes, so two coffees only compare fairly when they are tasted at the same point on their cooling curve. Logging that curve turns "taste it when it's ready" into something repeatable. Designed for James Hoffmann & Lucia Solis's [*The Fermentation Project*](https://www.thefermentationproject.com/) tasting experiment.
 
+![The Grafana dashboard: four cups cooling from 93C, with current readings and link quality](assets/dashboard.png)
+
+*A simulated session: the curves above were generated for the screenshot, not recorded from probes.*
+
 ---
 
 ## Hardware
@@ -59,6 +63,74 @@ mosquitto_pub -h localhost -t coffee/session/start -n
 
 ---
 
+---
+
+## Architecture
+
+```
+ESP32  ──MQTT──▶  Mosquitto  ──▶  Telegraf  ──▶  InfluxDB  ◀──  Grafana
+ probe            transport       collector        storage        display
+```
+
+Five pieces, because no two of them do the same job.
+
+### Why a broker at all
+
+The ESP32 could write to a database directly, but then the firmware would
+carry database credentials, a schema, and retry logic for a host that might
+be down. MQTT keeps the board's job small: connect, publish four numbers,
+forget them. Anything else that wants the readings subscribes, without the
+firmware knowing it exists.
+
+### Why MQTT is not enough
+
+A broker **forwards and forgets**. It holds no history: whatever is not
+subscribed at the moment a message arrives is gone for good. Retained
+messages are the one exception, and they keep only the latest value per
+topic, which is why `coffee/status` and `coffee/device/ip` use them.
+
+For a cooling curve that is fatal. The whole point is the shape of the
+curve over twenty minutes, and comparing this session against one from a
+month ago. Both need the readings to still exist after they arrive.
+
+### Why InfluxDB
+
+A time series database stores timestamped numbers and answers questions
+like "mean per 10s window over the last hour" cheaply. That is exactly the
+shape of this data, and exactly what the dashboard asks for on every
+refresh.
+
+A plain SQL table would also work at this volume - four probes every two
+seconds is trivial - but the downsampling the graph needs would then be
+hand-written SQL. The Flux queries in the dashboard are three lines.
+
+### Why Telegraf
+
+Something has to subscribe to MQTT and write to InfluxDB. Telegraf is a
+config file rather than a program to maintain:
+
+```toml
+[[inputs.mqtt_consumer.topic_parsing]]
+  topic = "coffee/sensor/+/temperature"
+  tags = "_/_/probe/_"
+```
+
+Those three lines turn `coffee/sensor/2/temperature` into a point tagged
+`probe=2`. That tag is what lets one dashboard query draw four separate
+curves instead of one averaged line.
+
+### Why not the Grafana MQTT plugin
+
+Grafana has an MQTT datasource plugin, and it would remove two containers
+from this stack. It streams live only - it shows what has arrived since the
+panel was opened, and keeps nothing. Refresh the page mid-session and the
+first half of the curve is gone, and yesterday's tasting was never
+recorded at all.
+
+Live-only is fine for watching a value move. It cannot answer "was this
+cup cooler than the one last week", which is the question the whole
+project exists to answer.
+
 ## Quickstart
 
 ### 1. Flash the ESP32
@@ -100,10 +172,9 @@ This starts four containers:
 - **`coffee-telegraf`** - subscribes to the topics and writes them to InfluxDB
 - **`coffee-grafana`** - Grafana on port `3000`
 
-Grafana reads nothing from MQTT directly - the broker forwards and forgets,
-so Telegraf and InfluxDB sit between them to give the curves somewhere to
-live. Copy `.env.example` to `.env` and fill in the InfluxDB credentials
-before the first start.
+Copy `.env.example` to `.env` and fill in the InfluxDB credentials before
+the first start. See [Architecture](#architecture) for what each container
+is doing there.
 
 Broker settings live in `mosquitto/config/mosquitto.conf`. The listener is
 anonymous, which is fine on a trusted LAN and not fine on anything exposed to
