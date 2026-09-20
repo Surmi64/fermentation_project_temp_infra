@@ -23,6 +23,8 @@ static const char STATUS_ONLINE[] = "online";
 static const char STATUS_OFFLINE[] = "offline";
 static const char SESSION_START_TOPIC[] = "coffee/session/start";
 static const char SESSION_ELAPSED_TOPIC[] = "coffee/session/elapsed";
+static const char DEVICE_RSSI_TOPIC[] = "coffee/device/rssi";
+static const char DEVICE_IP_TOPIC[] = "coffee/device/ip";
 
 OneWire oneWire(ONE_WIRE_PIN);
 DallasTemperature sensors(&oneWire);
@@ -116,6 +118,7 @@ static bool ensureMqtt() {
 
   if (mqtt.connect(MQTT_CLIENT_ID, STATUS_TOPIC, 0, true, STATUS_OFFLINE)) {
     mqtt.publish(STATUS_TOPIC, STATUS_ONLINE, true);
+    mqtt.publish(DEVICE_IP_TOPIC, WiFi.localIP().toString().c_str(), true);
     mqtt.subscribe(SESSION_START_TOPIC);
     mqttWasUp = true;
     Serial.println("mqtt: connected");
@@ -202,9 +205,13 @@ void loop() {
 
   const unsigned long elapsedSeconds = (now - sessionStartMs) / 1000;
   if (online) {
-    char elapsed[16];
-    snprintf(elapsed, sizeof(elapsed), "%lu", elapsedSeconds);
-    mqtt.publish(SESSION_ELAPSED_TOPIC, elapsed);
+    char scratch[16];
+
+    snprintf(scratch, sizeof(scratch), "%lu", elapsedSeconds);
+    mqtt.publish(SESSION_ELAPSED_TOPIC, scratch);
+
+    snprintf(scratch, sizeof(scratch), "%d", WiFi.RSSI());
+    mqtt.publish(DEVICE_RSSI_TOPIC, scratch);
   }
 
   for (uint8_t i = 0; i < probeCount; i++) {
