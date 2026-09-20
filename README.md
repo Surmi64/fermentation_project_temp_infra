@@ -47,6 +47,8 @@ Alongside the readings:
 - `coffee/status` - retained `online` / `offline`, backed by an MQTT last
   will, so a stalled graph can be told apart from a board that dropped off
 - `coffee/session/elapsed` - seconds since t=0, published each cycle
+- `coffee/device/ip` - retained, the address the board was given
+- `coffee/device/rssi` - link quality in dBm, published each cycle
 
 Publishing anything to `coffee/session/start` resets t=0. Marking the pour
 this way lets several cups be lined up on the same axis afterwards:
@@ -91,10 +93,17 @@ Open Serial Monitor at `115200` baud. Hold one probe in your hand to see which s
 docker compose up -d
 ```
 
-This starts two containers:
+This starts four containers:
 
 - **`coffee-mqtt`** - Mosquitto broker on port `1883`
+- **`coffee-influxdb`** - stores the readings, port `8086`
+- **`coffee-telegraf`** - subscribes to the topics and writes them to InfluxDB
 - **`coffee-grafana`** - Grafana on port `3000`
+
+Grafana reads nothing from MQTT directly - the broker forwards and forgets,
+so Telegraf and InfluxDB sit between them to give the curves somewhere to
+live. Copy `.env.example` to `.env` and fill in the InfluxDB credentials
+before the first start.
 
 Broker settings live in `mosquitto/config/mosquitto.conf`. The listener is
 anonymous, which is fine on a trusted LAN and not fine on anything exposed to
@@ -118,9 +127,18 @@ Readings should appear every 2 seconds, one line per probe.
 ├── coffee_thermometer/
 │   ├── coffee_thermometer.ino
 │   └── config.example.h
-├── docker-compose.yml
-└── mosquitto/
-    └── config/
-        └── mosquitto.conf
+├── grafana/
+│   ├── dashboards/
+│   │   └── cooling-curves.json
+│   └── provisioning/
+│       ├── dashboards/
+│       └── datasources/
+├── mosquitto/
+│   └── config/
+│       └── mosquitto.conf
+├── telegraf/
+│   └── telegraf.conf
+├── .env.example
+└── docker-compose.yml
 ```
 
